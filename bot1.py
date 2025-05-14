@@ -9,6 +9,8 @@ import logging
 
 TOKEN = "7490335964:AAFn3ifkQKpVfFHf20mCaPgjC6nykozO-lo"
 
+PORT = int(os.environ.get("PORT", 5000))
+
 ASK_QUESTION, ASK_OPTIONS, ASK_CORRECT, ASK_EXPLANATION, ASK_IMAGE, ASK_DELETE = range(6)
 
 logging.basicConfig(level=logging.INFO)
@@ -197,7 +199,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT, answer))
 
     print("✅ Бот запущен.")
-    app.run_polling()
+    app.run_polling(port=PORT)
 
 if __name__ == "__main__":
     main()
