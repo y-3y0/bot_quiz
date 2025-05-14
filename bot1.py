@@ -6,7 +6,6 @@ from telegram.ext import (
 import sqlite3
 import os
 import logging
-import asyncio
 
 TOKEN = "7490335964:AAFn3ifkQKpVfFHf20mCaPgjC6nykozO-lo"
 
@@ -173,7 +172,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Отменено.", reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
 
-async def main():
+def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     conv = ConversationHandler(
@@ -198,8 +197,7 @@ async def main():
     app.add_handler(MessageHandler(filters.TEXT, answer))
 
     print("✅ Бот запущен.")
-    await app.initialize()
-    await app.run_polling()
+    app.run_polling()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
