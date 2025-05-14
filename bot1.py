@@ -15,16 +15,25 @@ ASK_QUESTION, ASK_OPTIONS, ASK_CORRECT, ASK_EXPLANATION, ASK_IMAGE, ASK_DELETE =
 
 logging.basicConfig(level=logging.INFO)
 
+import psycopg2
+
 def get_db_connection():
-    conn = sqlite3.connect("questions.db")
-    conn.execute('''CREATE TABLE IF NOT EXISTS questions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        question TEXT NOT NULL,
-        options TEXT NOT NULL,
-        correct INTEGER NOT NULL,
-        explanation TEXT,
-        image TEXT
-    )''')
+    DATABASE_URL = os.environ.get("postgresql://questions_wh24_user:a3X1XHulE5TYBKsyCAAa2PdDiIlUGluC@dpg-d0if4uidbo4c73alieag-a/questions_wh24")
+    if not DATABASE_URL:
+        raise RuntimeError("❌ DATABASE_URL не установлена в переменных окружения")
+    conn = psycopg2.connect(DATABASE_URL)
+    with conn.cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS questions (
+                id SERIAL PRIMARY KEY,
+                question TEXT NOT NULL,
+                options TEXT NOT NULL,
+                correct INTEGER NOT NULL,
+                explanation TEXT,
+                image TEXT
+            );
+        """)
+        conn.commit()
     return conn
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
