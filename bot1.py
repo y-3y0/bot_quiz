@@ -6,6 +6,7 @@ from telegram.ext import (
 import sqlite3
 import os
 import logging
+import asyncio
 
 TOKEN = "7490335964:AAFn3ifkQKpVfFHf20mCaPgjC6nykozO-lo"
 
@@ -172,16 +173,12 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Отменено.", reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
 
-def main():
+async def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     conv = ConversationHandler(
-        entry_points=[
-            CommandHandler("add", add),
-            MessageHandler(filters.Regex("^Добавить вопрос$"), add),
-            CommandHandler("delete", delete),
-            MessageHandler(filters.Regex("^Удалить вопрос$"), delete)
-        ],
+        entry_points=[CommandHandler("add", add), MessageHandler(filters.Regex("^Добавить вопрос$"), add),
+                      CommandHandler("delete", delete), MessageHandler(filters.Regex("^Удалить вопрос$"), delete)],
         states={
             ASK_QUESTION: [MessageHandler(filters.TEXT, ask_options)],
             ASK_OPTIONS: [MessageHandler(filters.TEXT, ask_correct)],
@@ -201,16 +198,8 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT, answer))
 
     print("✅ Бот запущен.")
-    app.run_polling()
+    await app.initialize()
+    await app.run_polling()
 
 if __name__ == "__main__":
-    import asyncio
-
-    async def main():
-        await app.initialize()
-        await app.start()
-        print("✅ Бот запущен.")
-        await app.updater.start_polling()
-        await app.updater.idle()
-
     asyncio.run(main())
