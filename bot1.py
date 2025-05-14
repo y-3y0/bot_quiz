@@ -3,45 +3,27 @@ from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, filters,
     ContextTypes, ConversationHandler
 )
-import psycopg2
+import sqlite3
 import os
 import logging
 
-# Замените на свой токен Telegram-бота
 TOKEN = "7490335964:AAFn3ifkQKpVfFHf20mCaPgjC6nykozO-lo"
 
 ASK_QUESTION, ASK_OPTIONS, ASK_CORRECT, ASK_EXPLANATION, ASK_IMAGE, ASK_DELETE = range(6)
 
 logging.basicConfig(level=logging.INFO)
 
-# Подключение к PostgreSQL
 def get_db_connection():
-    return psycopg2.connect(
-        dbname="questions_wh24",
-        user="questions_wh24_user",
-        password="a3X1XHulE5TYBKsyCAAa2PdDiIlUGluC",
-        host="dpg-d0if4uidbo4c73alieag-a.oregon-postgres.render.com",
-        port="5432"
-    )
-
-def init_db():
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS questions (
-            id SERIAL PRIMARY KEY,
-            question TEXT NOT NULL,
-            options TEXT NOT NULL,
-            correct INTEGER NOT NULL,
-            explanation TEXT,
-            image_path TEXT
-        );
-    """)
-    conn.commit()
-    cur.close()
-    conn.close()
-
-# Команды
+    conn = sqlite3.connect("questions.db")
+    conn.execute('''CREATE TABLE IF NOT EXISTS questions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        question TEXT NOT NULL,
+        options TEXT NOT NULL,
+        correct INTEGER NOT NULL,
+        explanation TEXT,
+        image TEXT
+    )''')
+    return conn
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [["Начать викторину", "Добавить вопрос"], ["Удалить вопрос"]]
@@ -104,8 +86,6 @@ async def back_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [["Начать викторину", "Добавить вопрос"], ["Удалить вопрос"]]
     await update.message.reply_text("Главное меню.", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True))
 
-# Добавление
-
 async def add(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Введите вопрос:")
     return ASK_QUESTION
@@ -132,35 +112,24 @@ async def ask_explanation(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ASK_CORRECT
 
 async def ask_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["new_question"]["explanation"] = update.message.text
-    await update.message.reply_text("Прикрепите изображение или напишите 'нет':")
-    return ASK_IMAGE
+    if update.message and update.message.text:
+        context.user_data["new_question"]["explanation"] = update.message.text
+        await update.message.reply_text("Прикрепите изображение или напишите 'нет':")
+        return ASK_IMAGE
+    else:
+        await update.message.reply_text("❌ Пожалуйста, введите объяснение текстом.")
+        return ASK_EXPLANATION
 
 async def save_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = context.user_data["new_question"]
 
     if update.message.photo:
         file = await update.message.photo[-1].get_file()
-        os.makedirs("images", exist_ok=True)
         image_path = f"images/{file.file_unique_id}.jpg"
-
-        try:
-            await file.download_to_drive(image_path)
-            if os.path.exists(image_path):
-                size = os.path.getsize(image_path)
-                if size == 0:
-                    await update.message.reply_text("❌ Ошибка: изображение пустое (0 байт). Попробуйте другое.")
-                    return ASK_IMAGE
-                q["image"] = image_path
-            else:
-                await update.message.reply_text("❌ Ошибка: файл не был сохранён.")
-                return ASK_IMAGE
-        except Exception as e:
-            logging.error(f"[Ошибка загрузки файла] {e}")
-            await update.message.reply_text("❌ Не удалось сохранить изображение.")
-            return ASK_IMAGE
-
-    elif update.message.text.lower() == "нет":
+        os.makedirs("images", exist_ok=True)
+        await file.download_to_drive(image_path)
+        q["image"] = image_path
+    elif update.message.text and update.message.text.lower() == "нет":
         q["image"] = None
     else:
         await update.message.reply_text("❌ Прикрепите фото или напишите 'нет'.")
@@ -168,17 +137,13 @@ async def save_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO questions (question, options, correct, explanation, image_path) VALUES (%s, %s, %s, %s, %s)",
-        (q["question"], ";".join(q["options"]), q["correct"], q["explanation"], q["image"])
-    )
+    cursor.execute("INSERT INTO questions (question, options, correct, explanation, image) VALUES (?, ?, ?, ?, ?)",
+                   (q["question"], ";".join(q["options"]), q["correct"], q["explanation"], q["image"]))
     conn.commit()
     conn.close()
 
     await update.message.reply_text("✅ Вопрос добавлен!", reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
-
-# Удаление
 
 async def delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Введите ID вопроса для удаления:")
@@ -193,9 +158,9 @@ async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM questions WHERE id = %s", (qid,))
+    cur.execute("SELECT * FROM questions WHERE id = ?", (qid,))
     if cur.fetchone():
-        cur.execute("DELETE FROM questions WHERE id = %s", (qid,))
+        cur.execute("DELETE FROM questions WHERE id = ?", (qid,))
         conn.commit()
         await update.message.reply_text(f"✅ Вопрос {qid} удалён.")
     else:
@@ -206,8 +171,6 @@ async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Отменено.", reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
-
-# Main
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
@@ -241,18 +204,4 @@ def main():
     app.run_polling()
 
 if __name__ == "__main__":
-    init_db()
     main()
-
-
-import threading
-import http.server
-import socketserver
-
-def fake_server():
-    PORT = int(os.environ.get("PORT", 8080))
-    Handler = http.server.SimpleHTTPRequestHandler
-    with socketserver.TCPServer(("", PORT), Handler) as httpd:
-        httpd.serve_forever()
-
-threading.Thread(target=fake_server).start()
