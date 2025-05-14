@@ -243,3 +243,16 @@ def main():
 if __name__ == "__main__":
     init_db()
     main()
+
+
+import threading
+import http.server
+import socketserver
+
+def fake_server():
+    PORT = int(os.environ.get("PORT", 8080))
+    Handler = http.server.SimpleHTTPRequestHandler
+    with socketserver.TCPServer(("", PORT), Handler) as httpd:
+        httpd.serve_forever()
+
+threading.Thread(target=fake_server).start()
