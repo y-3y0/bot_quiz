@@ -3,29 +3,45 @@ from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, filters,
     ContextTypes, ConversationHandler
 )
-import sqlite3
+import psycopg2
 import os
 import logging
 
+# Замените на свой токен Telegram-бота
 TOKEN = "7490335964:AAFn3ifkQKpVfFHf20mCaPgjC6nykozO-lo"
 
 ASK_QUESTION, ASK_OPTIONS, ASK_CORRECT, ASK_EXPLANATION, ASK_IMAGE, ASK_DELETE = range(6)
 
 logging.basicConfig(level=logging.INFO)
 
+# Подключение к PostgreSQL
 def get_db_connection():
-    conn = sqlite3.connect("questions.db")
-    conn.execute('''CREATE TABLE IF NOT EXISTS questions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        question TEXT NOT NULL,
-        options TEXT NOT NULL,
-        correct INTEGER NOT NULL,
-        explanation TEXT,
-        image TEXT
-    )''')
-    return conn
+    return psycopg2.connect(
+        dbname="questions_wh24",
+        user="questions_wh24_user",
+        password="a3X1XHulE5TYBKsyCAAa2PdDiIlUGluC",
+        host="dpg-d0if4uidbo4c73alieag-a.oregon-postgres.render.com",
+        port="5432"
+    )
 
-# ─────────── Команды ────────────────
+def init_db():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS questions (
+            id SERIAL PRIMARY KEY,
+            question TEXT NOT NULL,
+            options TEXT NOT NULL,
+            correct INTEGER NOT NULL,
+            explanation TEXT,
+            image_path TEXT
+        );
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
+# Команды
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [["Начать викторину", "Добавить вопрос"], ["Удалить вопрос"]]
@@ -88,7 +104,7 @@ async def back_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [["Начать викторину", "Добавить вопрос"], ["Удалить вопрос"]]
     await update.message.reply_text("Главное меню.", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True))
 
-# ─────────── Добавление ─────────────
+# Добавление
 
 async def add(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Введите вопрос:")
@@ -129,19 +145,16 @@ async def save_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
         image_path = f"images/{file.file_unique_id}.jpg"
 
         try:
-            await file.download(custom_path=image_path)
+            await file.download_to_drive(image_path)
             if os.path.exists(image_path):
                 size = os.path.getsize(image_path)
                 if size == 0:
                     await update.message.reply_text("❌ Ошибка: изображение пустое (0 байт). Попробуйте другое.")
                     return ASK_IMAGE
-                else:
-                    print(f"[OK] Файл сохранён: {image_path} ({size} байт)")
-                    q["image"] = image_path
+                q["image"] = image_path
             else:
                 await update.message.reply_text("❌ Ошибка: файл не был сохранён.")
                 return ASK_IMAGE
-
         except Exception as e:
             logging.error(f"[Ошибка загрузки файла] {e}")
             await update.message.reply_text("❌ Не удалось сохранить изображение.")
@@ -153,11 +166,10 @@ async def save_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Прикрепите фото или напишите 'нет'.")
         return ASK_IMAGE
 
-    # Сохранение в базу
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO questions (question, options, correct, explanation, image) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO questions (question, options, correct, explanation, image_path) VALUES (%s, %s, %s, %s, %s)",
         (q["question"], ";".join(q["options"]), q["correct"], q["explanation"], q["image"])
     )
     conn.commit()
@@ -166,7 +178,7 @@ async def save_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✅ Вопрос добавлен!", reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
 
-# ─────────── Удаление ───────────────
+# Удаление
 
 async def delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Введите ID вопроса для удаления:")
@@ -181,9 +193,9 @@ async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM questions WHERE id = ?", (qid,))
+    cur.execute("SELECT * FROM questions WHERE id = %s", (qid,))
     if cur.fetchone():
-        cur.execute("DELETE FROM questions WHERE id = ?", (qid,))
+        cur.execute("DELETE FROM questions WHERE id = %s", (qid,))
         conn.commit()
         await update.message.reply_text(f"✅ Вопрос {qid} удалён.")
     else:
@@ -195,7 +207,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Отменено.", reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
 
-# ─────────── MAIN ──────────────────
+# Main
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
@@ -229,5 +241,5 @@ def main():
     app.run_polling()
 
 if __name__ == "__main__":
+    init_db()
     main()
-
