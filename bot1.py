@@ -7,33 +7,24 @@ import sqlite3
 import os
 import logging
 
-TOKEN = "7490335964:AAFn3ifkQKpVfFHf20mCaPgjC6nykozO-lo"
-
+TOKEN = os.getenv("BOT_TOKEN")  # Заменено на переменную окружения
 PORT = int(os.environ.get("PORT", 5000))
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Важно! Например: https://your-app.onrender.com
 
 ASK_QUESTION, ASK_OPTIONS, ASK_CORRECT, ASK_EXPLANATION, ASK_IMAGE, ASK_DELETE = range(6)
 
 logging.basicConfig(level=logging.INFO)
 
-import psycopg2
-
 def get_db_connection():
-    DATABASE_URL = os.environ.get("postgresql://questions_wh24_user:a3X1XHulE5TYBKsyCAAa2PdDiIlUGluC@dpg-d0if4uidbo4c73alieag-a/questions_wh24")
-    if not DATABASE_URL:
-        raise RuntimeError("❌ DATABASE_URL не установлена в переменных окружения")
-    conn = psycopg2.connect(DATABASE_URL)
-    with conn.cursor() as cur:
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS questions (
-                id SERIAL PRIMARY KEY,
-                question TEXT NOT NULL,
-                options TEXT NOT NULL,
-                correct INTEGER NOT NULL,
-                explanation TEXT,
-                image TEXT
-            );
-        """)
-        conn.commit()
+    conn = sqlite3.connect("questions.db")
+    conn.execute('''CREATE TABLE IF NOT EXISTS questions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        question TEXT NOT NULL,
+        options TEXT NOT NULL,
+        correct INTEGER NOT NULL,
+        explanation TEXT,
+        image TEXT
+    )''')
     return conn
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -184,11 +175,18 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 def main():
+    if not TOKEN or not WEBHOOK_URL:
+        raise RuntimeError("❌ Не установлены переменные окружения BOT_TOKEN или WEBHOOK_URL")
+
     app = ApplicationBuilder().token(TOKEN).build()
 
     conv = ConversationHandler(
-        entry_points=[CommandHandler("add", add), MessageHandler(filters.Regex("^Добавить вопрос$"), add),
-                      CommandHandler("delete", delete), MessageHandler(filters.Regex("^Удалить вопрос$"), delete)],
+        entry_points=[
+            CommandHandler("add", add),
+            MessageHandler(filters.Regex("^Добавить вопрос$"), add),
+            CommandHandler("delete", delete),
+            MessageHandler(filters.Regex("^Удалить вопрос$"), delete)
+        ],
         states={
             ASK_QUESTION: [MessageHandler(filters.TEXT, ask_options)],
             ASK_OPTIONS: [MessageHandler(filters.TEXT, ask_correct)],
@@ -207,8 +205,13 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^Главное меню$"), back_to_main_menu))
     app.add_handler(MessageHandler(filters.TEXT, answer))
 
-    print("✅ Бот запущен.")
-    app.run_polling()
+    print("🌐 Бот запущен через Webhook")
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path=TOKEN,
+        webhook_url=f"{WEBHOOK_URL}/{TOKEN}"
+    )
 
 if __name__ == "__main__":
     main()
